@@ -38,6 +38,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Variable d'environnement BOT_TOKEN manquante")
 
+ADMIN_ID = 8464953107
+USERS_FILE = "users.json"
+
 # --- Serveur Web pour Render ---
 web_app = Flask(__name__)
 
@@ -49,12 +52,38 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host="0.0.0.0", port=port)
 
+# --- SAUVEGARDE UTILISATEURS POUR BROADCAST ---
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_user(user_id, username):
+    users = load_users()
+    for u in users:
+        if u["id"] == user_id:
+            return
+    users.append({"id": user_id, "username": username or ""})
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f)
+    except Exception as e:
+        logger.warning(f"Impossible de sauver user: {e}")
+
 def is_dark_file(filename: str | None) -> bool:
     if not filename:
         return False
     return ".dark" in filename.lower()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # On sauvegarde l'utilisateur pour le broadcast
+    if update.effective_user:
+        save_user(update.effective_user.id, update.effective_user.username)
+
     text = (
         "🔓 *DARKTUNNEL DECODER — KCORP TECH*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -74,6 +103,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "👇 *Envoyez votre fichier .dark maintenant pour commencer*"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Tu n'as pas le droit d'utiliser cette commande.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Utilise : /broadcast ton message\n\nExemple :\n/broadcast Salut, nouvelle mise à jour du bot !")
+        return
+
+    message = " ".join(context.args)
+    users = load_users()
+
+    if not users:
+        await update.message.reply_text("Aucun utilisateur enregistré pour l'instant. Les gens doivent d'abord faire /start.")
+        return
+
+    await update.message.reply_text(f"📤 Envoi en cours à {len(users)} utilisateurs...")
+
+    count = 0
+    failed = 0
+    for u in users:
+        try:
+            await context.bot.send_message(chat_id=u["id"], text=f"📢 *MESSAGE DE KCORP TECH :*\n\n{message}", parse_mode=ParseMode.MARKDOWN)
+            count += 1
+        except Exception as e:
+            logger.warning(f"Echec envoi à {u['id']}: {e}")
+            failed += 1
+
+    await update.message.reply_text(f"✅ Terminé !\nEnvoyé à : {count}\nÉchec : {failed}")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     doc: Document = update.message.document
@@ -165,13 +224,12 @@ async def _send_result(update: Update, result: dict) -> None:
     Path(tmp_path).unlink(missing_ok=True)
 
 def main() -> None:
-    # 1. On lance le serveur web pour Render
     Thread(target=run_web, daemon=True).start()
 
-    # 2. On lance le bot
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
