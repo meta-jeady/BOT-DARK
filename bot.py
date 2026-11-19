@@ -36,13 +36,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Variable d'environnement BOT_TOKEN manquante")
 
-
 def is_dark_file(filename: str | None) -> bool:
-    """Accepte tous les fichiers contenant .dark (même avec (1), (3), emoji...)"""
     if not filename:
         return False
     return ".dark" in filename.lower()
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
@@ -54,7 +51,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "DECODE BY : KCORP TECH"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     doc: Document = update.message.document
@@ -86,7 +82,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode=ParseMode.MARKDOWN
         )
 
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
 
@@ -111,13 +106,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             parse_mode=ParseMode.MARKDOWN
         )
 
-
 async def _send_result(update: Update, result: dict) -> None:
-    """Envoie UNIQUEMENT le fichier .txt avec la signature"""
     name = result.get("name", "config")
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", str(name))[:40]
 
-    # JSON + signature
     json_text = json.dumps(result, indent=2, ensure_ascii=False)
     json_text += "\n\nDECODE BY : KCORP TECH"
 
@@ -127,24 +119,23 @@ async def _send_result(update: Update, result: dict) -> None:
         tmp.write(json_text)
         tmp_path = tmp.name
 
-    await update.message.reply_document(
-        document=open(tmp_path, "rb"),
-        filename=f"{safe_name}_decoded.txt",
-        caption="📄 Configuration décodée\nDECODE BY : KCORP TECH",
-    )
+    with open(tmp_path, "rb") as f:
+        await update.message.reply_document(
+            document=f,
+            filename=f"{safe_name}_decoded.txt",
+            caption="📄 Configuration décodée\nDECODE BY : KCORP TECH",
+        )
     Path(tmp_path).unlink(missing_ok=True)
-
 
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(MessageHandler(filters.TEXT & \~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     logger.info("Bot démarré…")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
