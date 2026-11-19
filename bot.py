@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import Update, Document
+from telegram import Update, Document, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -43,12 +43,25 @@ def is_dark_file(filename: str | None) -> bool:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        "🔓 *DarkTunnel Decoder Bot*\n\n"
-        "Envoie-moi :\n"
-        "• un fichier `.dark`\n"
-        "• ou un lien `darktunnel://...`\n\n"
-        "Je te renverrai la configuration déchiffrée en fichier `.txt`.\n\n"
-        "DECODE BY : KCORP TECH"
+        "🔓 *DARKTUNNEL DECODER — KCORP TECH*\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "👋 Bienvenue !\n"
+        "Décryptez vos fichiers DarkTunnel en quelques secondes, "
+        "de façon rapide, sécurisée et 100% automatique.\n\n"
+        "📂 *COMMENT UTILISER LE BOT ?*\n"
+        "1️⃣ Envoyez votre fichier `.dark`\n"
+        "2️⃣ Ou collez votre lien `darktunnel://...`\n"
+        "3️⃣ Recevez instantanément votre configuration déchiffrée en `.txt`\n\n"
+        "⚡ *FONCTIONNALITÉS*\n"
+        "• ✅ Décodage instantané\n"
+        "• ✅ Support fichiers renommés / avec numéros\n"
+        "• ✅ Fichier propre + prêt à l'emploi\n"
+        "• ✅ Disponible 24h/24 - 7j/7\n\n"
+        "📩 *SUPPORT & CONTACT*\n"
+        "Un problème ? Un fichier qui ne passe pas ?\n"
+        "Contactez : https://t.me/metajeady\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "👇 *Envoyez votre fichier .dark maintenant pour commencer*"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
@@ -110,6 +123,14 @@ async def _send_result(update: Update, result: dict) -> None:
     name = result.get("name", "config")
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", str(name))[:40]
 
+    user = update.effective_user
+    if user:
+        requested_by = user.full_name
+        if user.username:
+            requested_by += f" (@{user.username})"
+    else:
+        requested_by = "Unknown"
+
     json_text = json.dumps(result, indent=2, ensure_ascii=False)
     json_text += "\n\nDECODE BY : KCORP TECH"
 
@@ -119,11 +140,24 @@ async def _send_result(update: Update, result: dict) -> None:
         tmp.write(json_text)
         tmp_path = tmp.name
 
+    caption = (
+        f"✅ <b>Decrypted Successfully</b>\n\n"
+        f"👤 <b>Requested by:</b> {requested_by}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📩 Contact Dev", url="https://t.me/metajeady"),
+        ],
+    ])
+
     with open(tmp_path, "rb") as f:
         await update.message.reply_document(
             document=f,
             filename=f"{safe_name}_decoded.txt",
-            caption="📄 Configuration décodée\nDECODE BY : KCORP TECH",
+            caption=caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
         )
     Path(tmp_path).unlink(missing_ok=True)
 
