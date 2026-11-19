@@ -1,7 +1,12 @@
+"""
+DarkTunnel (.dark / darktunnel://) decoder
+"""
+
 from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -21,16 +26,22 @@ def _aes_cfb_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
 def _b64_decode_safe(s: str | bytes) -> bytes:
     if isinstance(s, bytes):
         return s
+
+    s = s.strip()
     s = s.replace("-", "+").replace("_", "/")
-    padding = 4 - len(s) % 4
-    if padding != 4:
-        s += "=" * padding
+    s = re.sub(r"[^A-Za-z0-9+/=]", "", s)
+
+    missing = len(s) % 4
+    if missing:
+        s += "=" * (4 - missing)
+
     return base64.b64decode(s)
 
 
 def _try_decrypt_field(value: Any, key: bytes = KEY_192) -> Any:
     if value is None or value == "":
         return value
+
     raw = None
     if isinstance(value, bytes):
         raw = value
@@ -42,8 +53,10 @@ def _try_decrypt_field(value: Any, key: bytes = KEY_192) -> Any:
                 raw = _b64_decode_safe(value)
             except Exception:
                 return value
+
     if not raw:
         return value
+
     try:
         dec = _aes_cfb_decrypt(raw, key, IV)
         try:
@@ -74,11 +87,19 @@ def _recursive_clean(obj: Any, key: bytes = KEY_192) -> Any:
 
 
 def decode_darktunnel(content: str) -> dict:
-    content = content.strip()
+    content = content.strip().lstrip("\ufeff").strip()
+
     if content.startswith("darktunnel://"):
         content = content[len("darktunnel://"):]
 
-    outer = json.loads(base64.b64decode(content).decode("utf-8"))
+    content = re.sub(r"\s+", "", content)
+
+    try:
+        outer_bytes = _b64_decode_safe(content)
+        outer = json.loads(outer_bytes.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(f"Impossible de lire le contenu base64/JSON : {e}")
+
     if "encryptedLockedConfig" not in outer:
         raise ValueError("Champ encryptedLockedConfig manquant")
 
@@ -104,6 +125,9 @@ def decode_darktunnel(content: str) -> dict:
     cleaned_inner = _recursive_clean(inner)
 
     v2ray_str = cleaned_inner.get("V2RayConfig", {}).get("EncryptedConfig", "")
+    if not v2ray_str:
+        raise ValueError("Aucune configuration V2Ray trouvée dans le fichier")
+
     v2ray_str_clean = (
         v2ray_str
         .replace('"$SOCKS5_LISTEN_HOST"', '"127.0.0.1"')
