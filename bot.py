@@ -10,9 +10,11 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from threading import Thread
 
 from dotenv import load_dotenv
-from telegram import Update, Document, InlineKeyboardButton, InlineKeyboardMarkup
+from flask import Flask
+from telegram import Update, Document
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -36,6 +38,17 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Variable d'environnement BOT_TOKEN manquante")
 
+# --- Serveur Web pour Render ---
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is alive! - KCORP TECH", 200
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
+
 def is_dark_file(filename: str | None) -> bool:
     if not filename:
         return False
@@ -57,9 +70,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• ✅ Support fichiers renommés / avec numéros\n"
         "• ✅ Fichier propre + prêt à l'emploi\n"
         "• ✅ Disponible 24h/24 - 7j/7\n\n"
-        "📩 *SUPPORT & CONTACT*\n"
-        "Un problème ? Un fichier qui ne passe pas ?\n"
-        "Contactez : https://t.me/metajeady\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "👇 *Envoyez votre fichier .dark maintenant pour commencer*"
     )
@@ -145,23 +155,20 @@ async def _send_result(update: Update, result: dict) -> None:
         f"👤 <b>Requested by:</b> {requested_by}"
     )
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📩 Contact Dev", url="https://t.me/metajeady"),
-        ],
-    ])
-
     with open(tmp_path, "rb") as f:
         await update.message.reply_document(
             document=f,
             filename=f"{safe_name}_decoded.txt",
             caption=caption,
             parse_mode=ParseMode.HTML,
-            reply_markup=keyboard,
         )
     Path(tmp_path).unlink(missing_ok=True)
 
 def main() -> None:
+    # 1. On lance le serveur web pour Render
+    Thread(target=run_web, daemon=True).start()
+
+    # 2. On lance le bot
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
