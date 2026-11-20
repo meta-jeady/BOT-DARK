@@ -1,6 +1,5 @@
 """
-Bot Telegram – DarkTunnel + SocksIP Decoder
-KCORP TECH
+Bot Telegram – DarkTunnel Decoder
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from telegram.ext import (
     filters,
 )
 
-from decoder import decode   # ← fonction unifiée (DarkTunnel + SocksIP)
+from decoder import decode_darktunnel
 
 load_dotenv()
 
@@ -75,34 +74,33 @@ def save_user(user_id, username):
     except Exception as e:
         logger.warning(f"Impossible de sauver user: {e}")
 
-def is_supported_file(filename: str | None) -> bool:
-    """Accepte .dark et .sip (même avec numéro, emoji, etc.)"""
+def is_dark_file(filename: str | None) -> bool:
     if not filename:
         return False
-    name = filename.lower()
-    return ".dark" in name or ".sip" in name
+    return ".dark" in filename.lower()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # On sauvegarde l'utilisateur pour le broadcast
     if update.effective_user:
         save_user(update.effective_user.id, update.effective_user.username)
 
     text = (
-        "🔓 *DARKTUNNEL + SOCKSIP DECODER — KCORP TECH*\n"
+        "🔓 *DARKTUNNEL DECODER — KCORP TECH*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "👋 Bienvenue !\n"
-        "Décryptez vos fichiers **DarkTunnel** et **SocksIP** en quelques secondes.\n\n"
+        "Décryptez vos fichiers DarkTunnel en quelques secondes, "
+        "de façon rapide, sécurisée et 100% automatique.\n\n"
         "📂 *COMMENT UTILISER LE BOT ?*\n"
-        "1️⃣ Envoyez votre fichier `.dark` ou `.sip`\n"
+        "1️⃣ Envoyez votre fichier `.dark`\n"
         "2️⃣ Ou collez votre lien `darktunnel://...`\n"
         "3️⃣ Recevez instantanément votre configuration déchiffrée en `.txt`\n\n"
         "⚡ *FONCTIONNALITÉS*\n"
         "• ✅ Décodage instantané\n"
-        "• ✅ Support fichiers renommés / avec numéros / emoji\n"
-        "• ✅ Support DarkTunnel + SocksIP\n"
+        "• ✅ Support fichiers renommés / avec numéros\n"
         "• ✅ Fichier propre + prêt à l'emploi\n"
         "• ✅ Disponible 24h/24 - 7j/7\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "👇 *Envoyez votre fichier .dark ou .sip maintenant*"
+        "👇 *Envoyez votre fichier .dark maintenant pour commencer*"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
@@ -112,9 +110,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if not context.args:
-        await update.message.reply_text(
-            "Utilise : /broadcast ton message\n\nExemple :\n/broadcast Salut, nouvelle mise à jour du bot !"
-        )
+        await update.message.reply_text("Utilise : /broadcast ton message\n\nExemple :\n/broadcast Salut, nouvelle mise à jour du bot !")
         return
 
     message = " ".join(context.args)
@@ -130,11 +126,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     failed = 0
     for u in users:
         try:
-            await context.bot.send_message(
-                chat_id=u["id"],
-                text=f"📢 *MESSAGE DE KCORP TECH :*\n\n{message}",
-                parse_mode=ParseMode.MARKDOWN
-            )
+            await context.bot.send_message(chat_id=u["id"], text=f"📢 *MESSAGE DE KCORP TECH :*\n\n{message}", parse_mode=ParseMode.MARKDOWN)
             count += 1
         except Exception as e:
             logger.warning(f"Echec envoi à {u['id']}: {e}")
@@ -147,10 +139,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not doc:
         return
 
-    if not is_supported_file(doc.file_name):
+    if not is_dark_file(doc.file_name):
         await update.message.reply_text(
-            "⚠️ Envoie uniquement un fichier `.dark` ou `.sip`\n"
-            "(même s'il a un numéro ou un emoji)."
+            "⚠️ Envoie uniquement un fichier `.dark` (même s'il a un numéro ou un emoji)."
         )
         return
 
@@ -158,10 +149,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         tg_file = await doc.get_file()
-        content = await tg_file.download_as_bytearray()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".dark") as tmp:
+            await tg_file.download_to_drive(tmp.name)
+            content = Path(tmp.name).read_text(encoding="utf-8", errors="ignore")
+            Path(tmp.name).unlink(missing_ok=True)
 
-        # On passe le nom du fichier pour que le decoder sache si c'est .sip ou .dark
-        result = decode(content, filename=doc.file_name)
+        result = decode_darktunnel(content)
         await _send_result(update, result)
 
     except Exception as e:
@@ -176,7 +169,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if "darktunnel://" not in text.lower():
         await update.message.reply_text(
-            "Envoie un fichier `.dark` / `.sip` ou colle un lien qui commence par `darktunnel://`"
+            "Envoie un fichier `.dark` ou colle un lien qui commence par `darktunnel://`"
         )
         return
 
@@ -186,7 +179,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text("⏳ Décodage en cours…")
 
     try:
-        result = decode(content)
+        result = decode_darktunnel(content)
         await _send_result(update, result)
     except Exception as e:
         logger.exception("Erreur décodage texte")
@@ -196,7 +189,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 async def _send_result(update: Update, result: dict) -> None:
-    name = result.get("name") or result.get("format") or "config"
+    name = result.get("name", "config")
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", str(name))[:40]
 
     user = update.effective_user
@@ -218,8 +211,7 @@ async def _send_result(update: Update, result: dict) -> None:
 
     caption = (
         f"✅ <b>Decrypted Successfully</b>\n\n"
-        f"👤 <b>Requested by:</b> {requested_by}\n"
-        f"DECODE BY : KCORP TECH"
+        f"👤 <b>Requested by:</b> {requested_by}"
     )
 
     with open(tmp_path, "rb") as f:
